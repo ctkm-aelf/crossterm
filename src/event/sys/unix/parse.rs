@@ -689,7 +689,17 @@ pub(crate) fn parse_csi_special_key_code(buffer: &[u8]) -> io::Result<Option<Int
             (KeyModifiers::NONE, KeyEventKind::Press, KeyEventState::NONE)
         };
 
+    let modify_other_keys_keycode = if first == 27 {
+        split
+            .next()
+            .and_then(|keycode| keycode.parse::<u8>().ok())
+            .and_then(parse_special_modifier_key_code)
+    } else {
+        None
+    };
+
     let keycode = match first {
+        27 => modify_other_keys_keycode.ok_or_else(could_not_parse_event_error)?,
         1 | 7 => KeyCode::Home,
         2 => KeyCode::Insert,
         3 => KeyCode::Delete,
@@ -709,6 +719,16 @@ pub(crate) fn parse_csi_special_key_code(buffer: &[u8]) -> io::Result<Option<Int
     ));
 
     Ok(Some(InternalEvent::Event(input_event)))
+}
+
+fn parse_special_modifier_key_code(keycode: u8) -> Option<KeyCode> {
+    match keycode {
+        8 => Some(KeyCode::Backspace),
+        9 => Some(KeyCode::Tab),
+        13 => Some(KeyCode::Enter),
+        27 => Some(KeyCode::Esc),
+        _ => None,
+    }
 }
 
 pub(crate) fn parse_csi_rxvt_mouse(buffer: &[u8]) -> io::Result<Option<InternalEvent>> {
@@ -1517,6 +1537,13 @@ mod tests {
 
     #[test]
     fn test_parse_csi_special_key_code_with_types() {
+        assert_eq!(
+            parse_event(b"\x1B[27;2;13~", false).unwrap(),
+            Some(InternalEvent::Event(Event::Key(KeyEvent::new(
+                KeyCode::Enter,
+                KeyModifiers::SHIFT,
+            )))),
+        );
         assert_eq!(
             parse_event(b"\x1B[;1:3B", false).unwrap(),
             Some(InternalEvent::Event(Event::Key(KeyEvent::new_with_kind(
